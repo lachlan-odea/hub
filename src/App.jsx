@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 
 // --- Global Configuration (Mandatory Setup) ---
-// Note: API Key is set to "" and will be injected by the environment if deployed to a platform like Canvas.
-const apiKey = " AIzaSyCG5jFwxIMO9_BVl6odE3uoiI4W0iJiH28"; 
+const apiKey = "AIzaSyCG5jFwxIMO9_BVl6odE3uoiI4W0iJiH28";
 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
 // The JSON schema ensures the Ad Copy model returns a predictable array of copy objects.
@@ -49,51 +48,71 @@ const fetchWithRetry = async (url, options, retries = 3) => {
   }
 };
 
-// Function to convert Markdown text to React elements, focusing on paragraphs/lists (basic markdown renderer)
+// Global counter for generating unique keys in renderMarkdown
+let uniqueKeyCounter = 0;
+
+// Function to convert Markdown text to React elements (Custom simplified renderer)
 const renderMarkdown = (markdownText) => {
-  if (!markdownText) return null;
+    if (!markdownText) return null;
 
-  // Split text into lines/blocks
-  const lines = markdownText.split('\n');
-  const elements = [];
-  let listItems = [];
-  let isList = false;
+    // Reset list state variables
+    const lines = markdownText.split('\n');
+    const elements = [];
+    let currentList = [];
+    let isList = false;
 
-  const renderList = () => {
-    if (listItems.length > 0) {
-      elements.push(<ul key={elements.length} className="list-disc ml-6 space-y-1">{listItems}</ul>);
-      listItems = [];
-      isList = false;
-    }
-  };
+    const finalizeList = () => {
+        if (currentList.length > 0) {
+            // Use unique key for the list container
+            elements.push(<ul key={`list-${uniqueKeyCounter++}`} className="list-disc ml-6 space-y-1 text-sm text-gray-700">{currentList}</ul>);
+            currentList = [];
+            isList = false;
+        }
+    };
 
-  lines.forEach((line, index) => {
-    // Check for Heading (Bolded for simplicity)
-    if (line.trim().startsWith('**') && line.trim().endsWith('**')) {
-        renderList();
-        elements.push(<h4 key={index} className="text-lg font-bold mt-4 mb-2">{line.replace(/\*\*/g, '')}</h4>);
-    } 
-    // Check for List Item (Numbered list for simplicity, supporting only a single leading number/bullet)
-    else if (line.trim().match(/^(\d+\.|-|\*)\s/)) {
-        const content = line.trim().replace(/^(\d+\.|-|\*)\s/, '').replace(/\*\*/g, '<b>').replace(/\*/g, '<i>').replace(/__/g, '<u>');
-        listItems.push(<li key={index} dangerouslySetInnerHTML={{ __html: content }} />);
-        isList = true;
-    }
-    // Handle empty lines/paragraphs
-    else if (line.trim() !== '') {
-        renderList();
-        // Use p tag for normal paragraphs, applying simple bold/italic formatting
-        const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
-        elements.push(<p key={index} className="mb-2" dangerouslySetInnerHTML={{ __html: formattedLine }} />);
-    } else {
-        renderList();
-        // Insert a line break for spacing
-        elements.push(<div key={index} className="h-2"></div>);
-    }
-  });
+    lines.forEach((line) => {
+        const trimmedLine = line.trim();
 
-  renderList(); 
-  return <div className="text-sm text-gray-700">{elements}</div>;
+        // 1. Markdown Headers (e.g., ### Key Insights)
+        if (trimmedLine.startsWith('#')) {
+            finalizeList();
+            // Count hashes to determine level, default to h4 for body content
+            const match = trimmedLine.match(/^(#+)\s*(.*)/);
+            const level = match ? Math.min(match[1].length, 4) : 4; 
+            const content = match ? match[2] : trimmedLine;
+
+            const HeaderTag = `h${level}`;
+            elements.push(React.createElement(HeaderTag, { 
+                key: `header-${uniqueKeyCounter++}`, // Use unique key
+                className: `font-bold mt-4 mb-2 ${level <= 2 ? 'text-xl' : 'text-lg'}` 
+            }, content));
+        } 
+        // 2. List Items (e.g., * Insight: ...)
+        else if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ') || trimmedLine.match(/^\d+\.\s/)) {
+            isList = true;
+            // Clean up list content, replacing ** with <b> and * with <i> for inline formatting
+            let htmlContent = trimmedLine.replace(/^(\*|-|\d+\.)\s*/, '');
+            htmlContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
+            
+            // Use unique key for the list item
+            currentList.push(<li key={`li-${uniqueKeyCounter++}`} className="pl-1" dangerouslySetInnerHTML={{ __html: htmlContent }} />);
+        } 
+        // 3. Paragraphs/Regular Text
+        else if (trimmedLine.length > 0) {
+            finalizeList();
+            // Apply inline formatting to paragraphs
+            const htmlContent = trimmedLine.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
+            // Use unique key for the paragraph
+            elements.push(<p key={`p-${uniqueKeyCounter++}`} className="mb-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: htmlContent }} />);
+        } 
+        // 4. Empty Line (Separator)
+        else {
+            finalizeList();
+        }
+    });
+
+    finalizeList(); // Catch any final open list
+    return <div className="space-y-1">{elements}</div>;
 };
 
 // ----------------------------------------------------------------------
@@ -101,6 +120,7 @@ const renderMarkdown = (markdownText) => {
 // ----------------------------------------------------------------------
 
 const AdCopyGenerator = () => {
+  // UPDATED DEFAULTS HERE
   const defaultProductName = 'CargoWise';
   const defaultKeyBenefit = 'Enhanced operational efficiency through automation and real-time visibility across the supply chain, leading to better decision-making and simplified global compliance';
   const defaultTargetAudience = 'Logistics and Freight Forwarding Companies';
@@ -226,7 +246,7 @@ const AdCopyGenerator = () => {
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-custom-blue focus:ring-custom-blue p-3 border"
-                placeholder="e.g., Sustainable Bamboo Toothbrush"
+                placeholder="e.g., CargoWise"
               />
             </div>
             <div>
@@ -237,7 +257,7 @@ const AdCopyGenerator = () => {
                 value={keyBenefit}
                 onChange={(e) => setKeyBenefit(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-custom-blue focus:ring-custom-blue p-3 border"
-                placeholder="e.g., Reduces plastic waste and looks great."
+                placeholder="e.g., Enhanced operational efficiency..."
               />
             </div>
             
@@ -249,7 +269,7 @@ const AdCopyGenerator = () => {
                 value={targetAudience}
                 onChange={(e) => setTargetAudience(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-custom-blue focus:ring-custom-blue p-3 border"
-                placeholder="e.g., Eco-conscious millennials"
+                placeholder="e.g., Logistics and Freight Forwarding Companies"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -274,7 +294,7 @@ const AdCopyGenerator = () => {
                         value={tone}
                         onChange={(e) => setTone(e.target.value)}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-custom-blue focus:ring-custom-blue p-3 border"
-                        placeholder="e.g., Friendly, modern..."
+                        placeholder="e.g., Professional, trustworthy, and innovative"
                     />
                 </div>
             </div>
@@ -363,9 +383,9 @@ const AdCopyGenerator = () => {
 // ----------------------------------------------------------------------
 
 const NewsAnalyser = () => {
-    // Removed dateRanges array
-
+    // UPDATED DEFAULT TOPIC HERE
     const [topic, setTopic] = useState('Digital trends within the logistics industry');
+    
     // Removed dateRange state
     const [loading, setLoading] = useState(false);
     const [summary, setSummary] = useState('');
