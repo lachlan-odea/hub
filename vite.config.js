@@ -4,7 +4,7 @@ import tailwindcss from 'tailwindcss'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/hub',
+  base: '/marketing-hub',
   css: {
     postcss: {
       plugins: [tailwindcss()],
