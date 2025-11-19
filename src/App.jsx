@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 // --- Global Configuration (Mandatory Setup) ---
 // This assumes the Gemini API key will be available in the environment.
-const apiKey = ""; 
+const apiKey = "AIzaSyCG5jFwxIMO9_BVl6odE3uoiI4W0iJiH28"; 
 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
 // The JSON schema ensures the model returns a predictable array of copy objects.
