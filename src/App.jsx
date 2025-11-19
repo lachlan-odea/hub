@@ -23,10 +23,10 @@ const responseSchema = {
 // --- Module 1: Ad Copy Generator Component ---
 
 const AdCopyGenerator = () => {
-  const defaultProductName = 'Sustainable Bamboo Toothbrush';
-  const defaultKeyBenefit = 'Reduces plastic waste and looks great on your counter.';
-  const defaultTargetAudience = 'Eco-conscious millennials who prioritize design.';
-  const defaultTone = 'Friendly, modern, and inspiring.';
+  const defaultProductName = 'CargoWise';
+  const defaultKeyBenefit = 'Enhanced operational efficiency through automation and real-time visibility across the supply chain, leading to better decision-making and simplified global compliance';
+  const defaultTargetAudience = 'Logistics and Freight Forwarding Companies';
+  const defaultTone = 'Professional, trustworthy, and innovative';
   const defaultNumVariants = 3; 
 
   const [productName, setProductName] = useState(defaultProductName);
