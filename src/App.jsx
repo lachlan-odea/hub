@@ -474,6 +474,7 @@ const App = () => {
                     </div>
                 </header>
                 
+                
                 <main className="pb-10">
                     {modules[activeModule]}
                 </main>
