@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 
 // --- Global Configuration (Mandatory Setup) ---
-const apiKey = "AIzaSyCG5jFwxIMO9_BVl6odE3uoiI4W0iJiH28";
+// Note: API Key is set to "" and will be injected by the environment if deployed to a platform like Canvas.
+const apiKey = "AIzaSyCG5jFwxIMO9_BVl6odE3uoiI4W0iJiH28"; 
 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
 // The JSON schema ensures the Ad Copy model returns a predictable array of copy objects.
@@ -19,10 +20,21 @@ const adCopyResponseSchema = {
   }
 };
 
+// --- Content Generation Types ---
+const CONTENT_TYPES = [
+    { label: 'LinkedIn Post (Short)', value: 'LinkedIn Post (Executive Summary/Short Form)', tone: 'Professional, Punchy, Focused on ROI' },
+    { label: 'Blog Post Outline', value: 'Detailed Blog Post Outline (5 main sections)', tone: 'Informative, Thought Leadership' },
+    { label: 'Newsletter Article (Medium)', value: 'Newsletter Article (300-500 words)', tone: 'Actionable, Direct, B2B' },
+    { label: 'Email Subject Line & Body Draft', value: 'High-Converting Email Draft and 5 Subject Line Options', tone: 'Persuasive, Urgent' },
+    { label: 'Whitepaper/eBook Section Draft', value: 'Detailed Draft of a Whitepaper Section (500-750 words)', tone: 'Deeply Technical, Authoritative' },
+];
+
+
 // --- Helper Functions ---
 const fetchWithRetry = async (url, options, retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
+      // NOTE: Using the global apiUrl here, as the key is handled globally in this single-model setup.
       const response = await fetch(url, options);
       if (response.ok) {
         return await response.json();
@@ -55,72 +67,73 @@ let uniqueKeyCounter = 0;
 const renderMarkdown = (markdownText) => {
     if (!markdownText) return null;
 
-    // Reset list state variables
     const lines = markdownText.split('\n');
     const elements = [];
-    let currentList = [];
-    let isList = false;
+    let currentInsightBlock = [];
+    let currentInsightTitle = ''; 
 
-    const finalizeList = () => {
-        if (currentList.length > 0) {
-            // Use unique key for the list container
-            elements.push(<ul key={`list-${uniqueKeyCounter++}`} className="list-disc ml-6 space-y-1 text-sm text-gray-700">{currentList}</ul>);
-            currentList = [];
-            isList = false;
+    const finalizeInsightBlock = () => {
+        // In the new structure, this function is only used for introductory text/paragraphs
+        if (currentInsightBlock.length > 0) {
+            elements.push(<div key={`insight-block-${uniqueKeyCounter++}`} className="space-y-3 text-sm text-gray-700">{currentInsightBlock}</div>);
+            currentInsightBlock = [];
         }
     };
 
     lines.forEach((line) => {
         const trimmedLine = line.trim();
-
-        // 1. Markdown Headers (e.g., ### Key Insights)
+        
+        // 1. Markdown Headers (e.g., ### Key Strategic Insights)
         if (trimmedLine.startsWith('#')) {
-            finalizeList();
-            // Count hashes to determine level, default to h4 for body content
+            finalizeInsightBlock();
             const match = trimmedLine.match(/^(#+)\s*(.*)/);
             const level = match ? Math.min(match[1].length, 4) : 4; 
             const content = match ? match[2] : trimmedLine;
+            
+            const htmlContent = content.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
 
             const HeaderTag = `h${level}`;
             elements.push(React.createElement(HeaderTag, { 
-                key: `header-${uniqueKeyCounter++}`, // Use unique key
-                className: `font-bold mt-4 mb-2 ${level <= 2 ? 'text-xl' : 'text-lg'}` 
-            }, content));
+                key: `header-${uniqueKeyCounter++}`, 
+                className: `font-bold mt-6 mb-2 ${level <= 2 ? 'text-xl' : 'text-lg'}`,
+                dangerouslySetInnerHTML: { __html: htmlContent } 
+            }));
         } 
-        // 2. List Items (e.g., * Insight: ...)
-        else if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ') || trimmedLine.match(/^\d+\.\s/)) {
-            isList = true;
-            // Clean up list content, replacing ** with <b> and * with <i> for inline formatting
-            let htmlContent = trimmedLine.replace(/^(\*|-|\d+\.)\s*/, '');
-            htmlContent = htmlContent.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
-            
-            // Use unique key for the list item
-            currentList.push(<li key={`li-${uniqueKeyCounter++}`} className="pl-1" dangerouslySetInnerHTML={{ __html: htmlContent }} />);
-        } 
-        // 3. Paragraphs/Regular Text
-        else if (trimmedLine.length > 0) {
-            finalizeList();
-            // Apply inline formatting to paragraphs
-            const htmlContent = trimmedLine.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
-            // Use unique key for the paragraph
-            elements.push(<p key={`p-${uniqueKeyCounter++}`} className="mb-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: htmlContent }} />);
-        } 
-        // 4. Empty Line (Separator)
+        // 2. Structural Content (Inside the Insight Cards)
         else {
-            finalizeList();
+            // Check for labeled content (Action/Recommendation)
+            let content = trimmedLine;
+            
+            // --- HIERARCHICAL LABEL REPLACEMENTS ---
+            content = content.replace(/^(Action \/ Insight:)/, '<span class="font-bold text-gray-800">Action / Insight:</span>');
+            content = content.replace(/^(Recommendation \/ Marketing Strategy:)/, '<span class="font-bold text-gray-800">Recommendation / Marketing Strategy:</span>');
+            content = content.replace(/^(Action:)/, '<span class="font-bold text-gray-800">Action:</span>');
+            content = content.replace(/^(Recommendation:)/, '<span class="font-bold text-gray-800">Recommendation:</span>');
+            content = content.replace(/^(Insight:)/, '<span class="font-bold text-gray-800">Insight:</span>');
+            content = content.replace(/^(Marketing Strategy:)/, '<span class="font-bold text-gray-800">Marketing Strategy:</span>');
+            
+            // Standard inline formatting
+            content = content.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/\*(.*?)\*/g, '<i>$1</i>');
+            
+            if (trimmedLine.length > 0) {
+                currentInsightBlock.push(<p key={`body-${uniqueKeyCounter++}`} className="mt-1" dangerouslySetInnerHTML={{ __html: content }} />);
+            } else {
+                // Handle empty line separator within text blocks
+                currentInsightBlock.push(<div key={`spacer-${uniqueKeyCounter++}`} className="h-1"></div>);
+            }
         }
     });
 
-    finalizeList(); // Catch any final open list
-    return <div className="space-y-1">{elements}</div>;
+    finalizeInsightBlock();
+    return <div className="space-y-3">{elements}</div>;
 };
+
 
 // ----------------------------------------------------------------------
 // --- MODULE 1: Ad Copy Generator Component ----------------------------
 // ----------------------------------------------------------------------
 
 const AdCopyGenerator = () => {
-  // UPDATED DEFAULTS HERE
   const defaultProductName = 'CargoWise';
   const defaultKeyBenefit = 'Enhanced operational efficiency through automation and real-time visibility across the supply chain, leading to better decision-making and simplified global compliance';
   const defaultTargetAudience = 'Logistics and Freight Forwarding Companies';
@@ -137,24 +150,75 @@ const AdCopyGenerator = () => {
   const [adCopies, setAdCopies] = useState([]);
   const [error, setError] = useState('');
   const [copyStatus, setCopyStatus] = useState(''); 
+  
+  // NEW STATE: For file upload reference
+  const [fileBase64, setFileBase64] = useState(null);
+  const [fileName, setFileName] = useState('');
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        // e.target.result is the data URL (e.g., data:application/pdf;base64,...)
+        const dataUrl = e.target.result;
+        
+        // Split the data URL to get the MIME type and the Base64 data
+        const [meta, base64Data] = dataUrl.split(',');
+        const mimeType = meta.split(':')[1].split(';')[0];
+
+        // Store the relevant data
+        setFileBase64({
+            data: base64Data,
+            mimeType: mimeType
+        });
+        setFileName(file.name);
+      };
+      
+      reader.onerror = () => {
+        setError("Failed to read file.");
+        setFileBase64(null);
+        setFileName('');
+      };
+
+      // Read the file as a Data URL (Base64)
+      reader.readAsDataURL(file);
+    } else {
+        setFileBase64(null);
+        setFileName('');
+    }
+  };
 
   const generateCopy = async () => {
     setLoading(true);
     setAdCopies([]);
     setError('');
-
-    const userQuery = `Generate exactly ${numVariants} distinct ad copy variants for the following product. Ensure the copy is highly persuasive and suitable for social media ads (Facebook/Instagram/X).
+    
+    // 1. Prepare text parts
+    let promptParts = [
+      { text: `Generate exactly ${numVariants} distinct ad copy variants for the following product, target, and tone. Reference any provided file content to ensure the copy is highly specific and on-brand for CargoWise.` },
+      { text: `
       - Product Name: ${productName}
       - Key Benefit: ${keyBenefit}
       - Target Audience: ${targetAudience}
       - Tone: ${tone}
-      
-      The variants should be distinct from each other, using different styles, tones, or focuses (e.g., Short & Punchy, Emotional Story, Detailed Feature Set).`;
+      `},
+    ];
 
+    // 2. Prepare file part (if fileBase64 exists)
+    if (fileBase64) {
+        promptParts = [
+            { text: `CONTEXT FILE: Analyze the attached file (e.g., press release, spec sheet, competitor analysis). Use the key themes, terminology, and metrics from this document as the foundation for the ad copy generation.`},
+            { inlineData: fileBase64 },
+            ...promptParts, // Append the text prompt after the file instruction
+        ];
+    }
+    
     const systemPrompt = "You are a world-class advertising copywriter specializing in highly effective A/B tested ad concepts. Your task is to analyse the product details and generate exactly the requested number of distinct ad copy variants in the provided JSON format. **Crucially, all responses must be in Australian English.**";
 
     const payload = {
-      contents: [{ parts: [{ text: userQuery }] }],
+      contents: [{ parts: promptParts }], // Send the combined parts array
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: {
         responseMimeType: "application/json",
@@ -163,7 +227,7 @@ const AdCopyGenerator = () => {
     };
 
     try {
-      const response = await fetchWithRetry(apiUrl, {
+      const response = await fetchWithRetry(apiUrl, { // Uses global apiUrl
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -194,6 +258,8 @@ const AdCopyGenerator = () => {
     setAdCopies([]);
     setError('');
     setLoading(false); 
+    setFileBase64(null); // Reset file
+    setFileName('');     // Reset filename
   };
   
   const copyToClipboard = (copy) => {
@@ -300,6 +366,36 @@ const AdCopyGenerator = () => {
             </div>
           </div>
 
+          {/* --- File Upload (Reference Material) --- */}
+          <div className="mt-6 border-t pt-6">
+            <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700 mb-2">
+                Reference Material (Optional)
+            </label>
+            <input
+                id="file-upload"
+                type="file"
+                accept=".pdf,.txt,.docx"
+                onChange={handleFileChange}
+                className="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-custom-blue/10 file:text-custom-blue
+                    hover:file:bg-custom-blue/20 cursor-pointer"
+            />
+            {fileName && (
+                <p className="mt-2 text-xs text-gray-600">
+                    File loaded: <span className="font-semibold">{fileName}</span>
+                    <button
+                        onClick={() => {setFileBase64(null); setFileName('');}}
+                        className="ml-2 text-red-500 hover:text-red-700 text-xs"
+                    >
+                        [Remove]
+                    </button>
+                </p>
+            )}
+          </div>
+
           {/* --- Action Buttons: Reset and Generate --- */}
           <div className="mt-8 flex space-x-4">
             <button
@@ -382,11 +478,9 @@ const AdCopyGenerator = () => {
 // --- MODULE 2: Marketing Trend Analysis Component ---------------------
 // ----------------------------------------------------------------------
 
-const NewsAnalyser = () => {
-    // UPDATED DEFAULT TOPIC HERE
+const NewsAnalyser = ({ sendToContentGenerator }) => {
     const [topic, setTopic] = useState('Digital trends within the logistics industry');
     
-    // Removed dateRange state
     const [loading, setLoading] = useState(false);
     const [summary, setSummary] = useState('');
     const [sources, setSources] = useState([]);
@@ -402,7 +496,7 @@ const NewsAnalyser = () => {
         const userQuery = `Find recent news, trends, and articles about "${topic}". Synthesize the findings into a concise, actionable marketing strategy summary. Highlight 3 key insights.`;
 
         // System prompt uses Australian English
-        const systemPrompt = "You are a professional market research analyst. You must use the Google Search tool to find current, real-time information. Provide a single, well-structured, easy-to-read summary that converts the research into marketing strategy recommendations. The output must be formatted using Markdown. Start with a bolded heading like '**Executive Summary**', followed by a **'Key Strategic Insights'** section with a numbered list. Use bolding (**) for key terms. **Crucially, all responses must be in Australian English.**";
+        const systemPrompt = "You are a professional market research analyst for CargoWise, targeting Logistics and Freight Forwarding Companies. Provide a single, well-structured, easy-to-read summary that converts the research into marketing strategy recommendations. The output must be formatted using Markdown. Start with '**Executive Summary**', followed by '**Key Strategic Insights**'. For each strategic insight, use a Markdown bullet point (*) and clearly label the content using the format: **Action/Insight:** and **Recommendation/Marketing Strategy:**. **Crucially, all responses must be in Australian English.**";
 
         const payload = {
             contents: [{ parts: [{ text: userQuery }] }],
@@ -412,7 +506,8 @@ const NewsAnalyser = () => {
         };
 
         try {
-            const response = await fetchWithRetry(apiUrl, {
+            // Use the global apiUrl for grounding
+            const response = await fetchWithRetry(apiUrl, { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -448,6 +543,41 @@ const NewsAnalyser = () => {
             setLoading(false);
         }
     };
+
+    const splitSummaryIntoInsights = (rawSummary) => {
+        if (!rawSummary) return [];
+        
+        // 1. Find the start of the key strategic insights section
+        const insightsStartRegex = /^\*\*Key Strategic Insights\*\*[\s\n]*/im;
+        const match = rawSummary.match(insightsStartRegex);
+        
+        // If the Key Strategic Insights header isn't found, return empty array (or intro text if needed)
+        if (!match) {
+            const introMatch = rawSummary.match(/Executive Summary[\s\n]*/i);
+            if (introMatch) {
+                 const introText = rawSummary.substring(introMatch.index + introMatch[0].length).trim();
+                 return [introText];
+            }
+            return []; 
+        }
+        
+        const contentAfterHeader = rawSummary.substring(match.index + match[0].length).trim();
+        
+        // Split by the bullet point structure (*)
+        const insights = contentAfterHeader.split('\n*').map(s => s.trim()).filter(s => s.length > 0);
+        
+        // Re-add the bullet point structure and clean the arrays
+        return insights.map((insight, index) => {
+            // Re-add the bullet point (*) to ensure our renderMarkdown logic finds the start of the block
+            return (index > 0 ? '*' : '') + insight;
+        }).filter(s => s.length > 0);
+    };
+
+    const insightBlocks = splitSummaryIntoInsights(summary);
+    const hasIntroText = insightBlocks.length > 0 && !insightBlocks[0].trim().startsWith('*');
+    const introText = hasIntroText ? insightBlocks[0] : '';
+    const strategicInsights = hasIntroText ? insightBlocks.slice(1) : insightBlocks;
+
 
     return (
         <div className="p-6 md:p-8 max-w-4xl mx-auto">
@@ -500,8 +630,11 @@ const NewsAnalyser = () => {
             
             {/* --- Results Display --- */}
             {(summary || loading) && (
-                <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-green-500">
-                    <h3 className="text-xl font-bold text-gray-900 mb-4">Analysis for "{topic}"</h3>
+                <div className="copy-card bg-white p-6 rounded-xl border-t-4 border-green-500 shadow-md">
+                    {/* Display Topic as styled tag */}
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700 mb-4 mr-2">
+                        Topic: {topic}
+                    </span>
                     
                     {loading ? (
                         <div className="text-center py-8 text-gray-500">
@@ -509,12 +642,43 @@ const NewsAnalyser = () => {
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            <p className="mt-2">Fetching and analysing the latest trends...</p>
+                            <p className="mt-2">Fetching and synthesising latest news...</p>
                         </div>
                     ) : (
                         <>
-                            {/* Rendering Markdown content (summary) using the custom renderer */}
-                            {renderMarkdown(summary)}
+                            {/* Render Executive Summary if present */}
+                            {introText && (
+                                <div className="mb-6">
+                                    <h4 className="text-lg font-bold mt-4 mb-2">Executive Summary</h4>
+                                    {renderMarkdown(introText)} 
+                                </div>
+                            )}
+
+                            {/* Render Key Strategic Insights Header */}
+                            {strategicInsights.length > 0 && (
+                                <h4 className="text-lg font-bold mt-4 mb-2 border-t pt-4">Key Strategic Insights</h4>
+                            )}
+                            
+                            {/* --- INDIVIDUAL INSIGHT CARDS (NEW STRUCTURE) --- */}
+                            <div className="space-y-4">
+                                {strategicInsights.map((insightMarkdown, index) => (
+                                    <div 
+                                        key={`insight-card-${index}`} 
+                                        className="copy-card bg-white p-4 rounded-xl border border-gray-200 shadow-sm"
+                                    >
+                                        {/* Render each individual insight block using the existing function */}
+                                        {renderMarkdown(insightMarkdown, sendToContentGenerator)}
+                                        <div className="flex justify-end pt-4 border-t mt-4">
+                                             <button
+                                                onClick={() => sendToContentGenerator(insightMarkdown)}
+                                                className="px-3 py-1 text-sm font-semibold rounded-md text-white bg-green-600 hover:bg-green-700 transition-colors shadow-md"
+                                            >
+                                                Send to Content Generator
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
 
                             {sources.length > 0 && (
                                 <div className="mt-6 pt-4 border-t border-gray-200">
@@ -553,7 +717,7 @@ const HomeView = ({ setActiveModule }) => (
             This home screen is your central hub for generative AI tools designed to optimise your marketing workflows. Select a module from the menu to get started.
         </p>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div 
                 className="bg-white p-6 rounded-xl shadow-md border-l-4 border-custom-blue hover:shadow-lg cursor-pointer transition-shadow"
                 onClick={() => setActiveModule('AdCopyGenerator')}
@@ -570,9 +734,211 @@ const HomeView = ({ setActiveModule }) => (
                 <p className="text-gray-500 mt-2">Get real-time market insights and actionable strategies from the latest news.</p>
             </div>
             
+             <div 
+                className="bg-white p-6 rounded-xl shadow-md border-l-4 border-red-500 hover:shadow-lg cursor-pointer transition-shadow"
+                onClick={() => setActiveModule('ContentGenerator')}
+            >
+                <h3 className="text-xl font-semibold text-red-600">Content Generator</h3>
+                <p className="text-gray-500 mt-2">Draft high-impact marketing content tailored for logistics executives.</p>
+            </div>
         </div>
     </div>
 );
+
+// ----------------------------------------------------------------------
+// --- MODULE 4: Content Generator (Placeholder) ------------------------
+// ----------------------------------------------------------------------
+
+const ContentGenerator = ({ initialPrompt, setInitialPrompt }) => {
+    const defaultPrompt = "Generate a compelling piece of content targeting Freight Forwarding executives about the strategic need for supply chain visibility and automation.";
+    const [prompt, setPrompt] = useState(initialPrompt || defaultPrompt);
+    // NEW STATE: Content Type Selection
+    const [contentType, setContentType] = useState(CONTENT_TYPES[0].value);
+    
+    const [loading, setLoading] = useState(false);
+    const [generatedContent, setGeneratedContent] = useState('');
+    const [error, setError] = useState('');
+
+    // Find the currently selected content type details
+    const selectedType = CONTENT_TYPES.find(t => t.value === contentType) || CONTENT_TYPES[0];
+
+    // Update local prompt state when initialPrompt changes (i.e., when sent from NewsAnalyser)
+    React.useEffect(() => {
+        if (initialPrompt) {
+            // Prepend a clear instruction for the model when transferring insight data
+            const fullPrompt = `Convert the following Strategic Insight into a ready-to-publish ${selectedType.value}. Maintain a professional, executive-level tone and focus on CargoWise's value proposition:\n\n---\n${initialPrompt}\n---`;
+            setPrompt(fullPrompt);
+            setInitialPrompt(''); // Clear the parent state after setting local state
+            setGeneratedContent(''); // Clear previous results
+        }
+    }, [initialPrompt, setInitialPrompt, selectedType.value]);
+    
+    // Logic to run content generation
+    const generateContent = async () => {
+        setLoading(true);
+        setGeneratedContent('');
+        setError('');
+
+        const userQuery = prompt; // Use the text area content as the main query
+        
+        const systemPrompt = `You are an expert B2B content strategist and writer for a leading logistics software company (CargoWise). 
+            Your task is to generate a piece of content that matches the format: ${selectedType.value} and the tone: ${selectedType.tone}.
+            The content must be polished, high-impact, and designed to drive engagement and demonstrate thought leadership to freight forwarding executives. 
+            Output must be in Australian English and formatted using Markdown.`;
+
+        const payload = {
+            contents: [{ parts: [{ text: userQuery }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+        };
+
+        try {
+            const response = await fetchWithRetry(apiUrl, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) {
+                throw new Error("Failed to receive content from the model.");
+            }
+            setGeneratedContent(text);
+
+        } catch (err) {
+            console.error('Content Generation Error:', err);
+            setError(`Content Generation Failed: ${err.message}.`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Helper to copy generated content to clipboard
+    const copyGeneratedContent = () => {
+        const textToCopy = generatedContent;
+        const textArea = document.createElement("textarea");
+        textArea.value = textToCopy;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        try {
+          const successful = document.execCommand('copy');
+          if (successful) {
+            // Replaced alert with console log to prevent modal errors
+            console.log('Content Copied to Clipboard!'); 
+          }
+        } catch (err) {
+          console.error('Could not copy content: ', err);
+        } finally {
+          document.body.removeChild(textArea);
+        }
+    };
+
+
+    return (
+        <div className="p-6 md:p-8 max-w-4xl mx-auto">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Content Generator</h2>
+            <p className="text-lg text-red-600 mb-8">
+                Draft high-impact marketing content tailored for logistics executives.
+            </p>
+
+            <div className="bg-white p-6 rounded-xl shadow-lg border-l-4 border-red-500">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="md:col-span-2">
+                        <label htmlFor="contentType" className="block text-sm font-medium text-gray-700">Content Type</label>
+                        <select
+                            id="contentType"
+                            value={contentType}
+                            onChange={(e) => setContentType(e.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 p-3 border bg-white"
+                        >
+                            {CONTENT_TYPES.map((type) => (
+                                <option key={type.value} value={type.value}>
+                                    {type.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Target Tone</label>
+                        <p className="mt-1 block w-full rounded-md border-gray-300 p-3 bg-gray-50 text-xs text-gray-600 h-10 flex items-center">
+                            {selectedType.tone}
+                        </p>
+                    </div>
+                </div>
+
+                <label htmlFor="contentPrompt" className="block text-sm font-medium text-gray-700 mb-2">Source Insight / Content Prompt</label>
+                <textarea
+                    id="contentPrompt"
+                    rows="8"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 p-3 border"
+                    placeholder={defaultPrompt}
+                />
+                
+                <button 
+                    onClick={generateContent}
+                    disabled={loading || !prompt}
+                    className={`mt-4 w-full flex items-center justify-center py-2 px-4 rounded-lg shadow-md text-white transition-all
+                        ${loading ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
+                >
+                     {loading ? (
+                        <>
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Drafting Content...
+                        </>
+                    ) : (
+                        'Generate Content Draft'
+                    )}
+                </button>
+            </div>
+            
+            {/* --- Content Output --- */}
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl relative mt-8" role="alert">
+                <strong className="font-bold">Error:</strong>
+                <span className="block sm:inline ml-2">{error}</span>
+              </div>
+            )}
+            
+            {generatedContent && (
+                // Match Ad Copy Generator structure: copy-card + border-t-4
+                <div className="copy-card bg-white p-6 rounded-xl border-t-4 border-red-500 shadow-md mt-8">
+                    {/* Display Content Type and Tone as styled tags */}
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700 mb-4 mr-2">
+                        Format: {selectedType.label}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700 mb-4">
+                        Tone: {selectedType.tone.split(',')[0]}
+                    </span>
+
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">Generated Content</h3>
+                    
+                    <div className="text-gray-600 mb-4 whitespace-pre-wrap border p-3 rounded-lg bg-gray-50">
+                        {/* Rendering Markdown content (summary) using the custom renderer */}
+                        {renderMarkdown(generatedContent)}
+                    </div>
+                    
+                    <div className="flex items-center justify-end border-t pt-4">
+                        <button
+                            onClick={copyGeneratedContent}
+                            className="ml-4 px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                        >
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 
 // ----------------------------------------------------------------------
 // --- MAIN APPLICATION COMPONENT ---------------------------------------
@@ -581,13 +947,28 @@ const HomeView = ({ setActiveModule }) => (
 const App = () => {
     const [activeModule, setActiveModule] = useState('Home');
     const [isSidebarOpen, setIsSidebarOpen] = useState(true); 
+    const [contentGeneratorPrompt, setContentGeneratorPrompt] = useState(''); // State to pass data
 
     const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+
+    // Function used by NewsAnalyser to switch module and pass prompt
+    const sendToContentGenerator = (insightText) => {
+        // Prepare the raw insight text to be formatted in the ContentGenerator module
+        setContentGeneratorPrompt(insightText);
+        
+        setActiveModule('ContentGenerator');
+    };
 
     const modules = {
         'Home': <HomeView setActiveModule={setActiveModule} />,
         'AdCopyGenerator': <AdCopyGenerator />,
-        'MarketingTrendAnalysis': <NewsAnalyser />, // Updated ID mapping
+        // Pass the function down to the NewsAnalyser
+        'MarketingTrendAnalysis': <NewsAnalyser sendToContentGenerator={sendToContentGenerator} />, 
+        // Pass the prompt state down to ContentGenerator
+        'ContentGenerator': <ContentGenerator 
+            initialPrompt={contentGeneratorPrompt} 
+            setInitialPrompt={setContentGeneratorPrompt}
+        />, 
     };
 
     const navItems = [
@@ -601,7 +982,8 @@ const App = () => {
             )
         },
         { id: 'AdCopyGenerator', name: 'Ad Copy Generator' },
-        { id: 'MarketingTrendAnalysis', name: 'Marketing Trend Analysis' }, // Updated nav item name
+        { id: 'MarketingTrendAnalysis', name: 'Marketing Trend Analysis' }, 
+        { id: 'ContentGenerator', name: 'Content Generator' }, // New Navigation Item
     ];
 
     return (
