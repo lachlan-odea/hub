@@ -451,7 +451,7 @@ const CopySelectedBtn = ({ copies, selected }) => {
 };
 
 // ── Module: Social Generator ──────────────────────────────────────────────────
-const SocialGenerator = () => {
+const SocialGenerator = ({ apiKey }) => {
   const [form, setForm] = useState({
     product: 'CargoWise', benefit: 'Enhanced operational efficiency through automation and real-time visibility across the supply chain.',
     audience: 'Logistics and Freight Forwarding Companies', tone: 'Professional and innovative', variants: 3,
@@ -634,7 +634,7 @@ Generate distinct social copy variants in JSON format. Use American English.`
 };
 
 // ── Module: Marketing Trend Analysis ─────────────────────────────────────────
-const NewsAnalyser = ({ sendToContentGenerator }) => {
+const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
   const [topic, setTopic] = useState('Digital trends within the logistics industry');
   const [loading, setLoading] = useState(false);
   const [intro, setIntro] = useState('');
@@ -687,7 +687,7 @@ const NewsAnalyser = ({ sendToContentGenerator }) => {
 };
 
 // ── Module: Content Generator ─────────────────────────────────────────────────
-const ContentGenerator = ({ initialPrompt, setInitialPrompt }) => {
+const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
   const [contentType, setContentType] = useState(CONTENT_TYPES[0].value);
   const [prompt, setPrompt] = useState(initialPrompt || 'Draft a LinkedIn post about supply chain visibility.');
   const [loading, setLoading] = useState(false);
@@ -705,7 +705,7 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt }) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `Create a ${contentType} based on this: ${prompt}` }] }],
-          systemInstruction: { parts: [{ text: 'You are an expert B2B copywriter for CargoWise. Use Australian English.' }] },
+          systemInstruction: { parts: [{ text: 'You are an expert B2B copywriter for CargoWise. Use American English.' }] },
         }),
       });
       setResult(res.candidates[0].content.parts[0].text);
@@ -771,25 +771,102 @@ const HomeView = ({ setActiveModule }) => {
   );
 };
 
-// ── Missing key ───────────────────────────────────────────────────────────────
-const MissingKeyBanner = () => (
-  <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
-    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-xl border border-red-100 dark:border-red-900 w-full max-w-lg p-8">
-      <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">API Key Not Configured</h1>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Add a Gemini API key as an environment variable.</p>
-      <div className="space-y-3 text-sm">
-        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-          <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Vite</p>
-          <pre className="bg-gray-900 text-green-400 rounded p-3 text-xs">VITE_GEMINI_API_KEY=your_key_here</pre>
+// ── API Key Management ────────────────────────────────────────────────────────
+const STORAGE_KEY = 'gemini_api_key';
+
+const getStoredKey = () => {
+  try { return localStorage.getItem(STORAGE_KEY) || ''; } catch { return ''; }
+};
+const saveKey = (key) => {
+  try { localStorage.setItem(STORAGE_KEY, key); } catch {}
+};
+const clearKey = () => {
+  try { localStorage.removeItem(STORAGE_KEY); } catch {}
+};
+
+// ── Key Entry Screen ──────────────────────────────────────────────────────────
+const KeyEntryScreen = ({ onKeySubmit }) => {
+  const [key, setKey] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    const trimmed = key.trim();
+    if (!trimmed) { setError('Please enter your Gemini API key.'); return; }
+    setLoading(true); setError('');
+    try {
+      // Validate the key with a lightweight test request
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmed}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+        }
+      );
+      if (res.status === 400 || res.ok) {
+        saveKey(trimmed);
+        onKeySubmit(trimmed);
+      } else if (res.status === 400) {
+        setError('Invalid API key. Please check and try again.');
+      } else if (res.status === 403) {
+        setError('API key does not have permission. Check your Gemini API key.');
+      } else {
+        const body = await res.json().catch(() => ({}));
+        const msg = body?.error?.message || `Unexpected error (${res.status})`;
+        setError(msg);
+      }
+    } catch {
+      setError('Could not validate the key. Check your internet connection.');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-xl w-full max-w-md p-8">
+        <div className="mb-6">
+          <span className="text-2xl font-bold text-indigo-600">AI Toolkit</span>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-3 mb-1">Enter your Gemini API key</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Your key is stored only on this device and never sent anywhere except directly to Google's Gemini API.
+          </p>
         </div>
-        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-          <p className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Create React App</p>
-          <pre className="bg-gray-900 text-green-400 rounded p-3 text-xs">REACT_APP_GEMINI_API_KEY=your_key_here</pre>
+
+        <div className="space-y-4">
+          <div>
+            <Label>Gemini API Key</Label>
+            <input
+              type="password"
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              placeholder="AIzaSy..."
+              className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 p-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white dark:focus:bg-gray-700 transition"
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+              {error}
+            </div>
+          )}
+
+          <PrimaryBtn loading={loading} loadingText="Validating…" color="indigo" onClick={handleSubmit}>
+            Get Started
+          </PrimaryBtn>
+
+          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+            Don't have a key?{' '}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
+              className="text-indigo-600 dark:text-indigo-400 hover:underline">
+              Get one free from Google AI Studio →
+            </a>
+          </p>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 const NAV = [
