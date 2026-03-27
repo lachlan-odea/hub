@@ -70,17 +70,40 @@ const fileToBase64 = (file) => new Promise((res, rej) => {
   r.readAsDataURL(file);
 });
 
-const fetchFileAsBase64 = async (url) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Could not fetch style file: ${url} (${res.status})`);
-  const blob = await res.blob();
-  const mimeType = blob.type || (url.endsWith('.md') ? 'text/plain' : 'application/pdf');
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve({ base64: reader.result.split(',')[1], mimeType });
-    reader.onerror = () => reject(new Error('Failed to read fetched file'));
-    reader.readAsDataURL(blob);
+const fetchStyleSource = async (url) => {
+  const isPdfOrMd = url.endsWith('.pdf') || url.endsWith('.md');
+
+  if (isPdfOrMd) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Could not fetch: ${url} (${res.status})`);
+    const blob = await res.blob();
+    const mimeType = blob.type || (url.endsWith('.md') ? 'text/plain' : 'application/pdf');
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ type: 'inline', base64: reader.result.split(',')[1], mimeType });
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  // Web page — fetch via CORS proxy and extract text
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`Could not fetch page: ${url} (${res.status})`);
+  const data = await res.json();
+  const html = data.contents;
+
+  // Strip HTML tags to get readable text
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  // Remove scripts, styles, nav, footer noise
+  ['script','style','nav','footer','header','noscript'].forEach(tag => {
+    tmp.querySelectorAll(tag).forEach(el => el.remove());
   });
+  const text = tmp.innerText || tmp.textContent || '';
+  const cleaned = text.replace(/\s+/g, ' ').trim().slice(0, 12000); // cap at ~12k chars
+
+  return { type: 'text', text: cleaned };
 };
 
 // ── Shared UI ────────────────────────────────────────────────────────────────
@@ -192,7 +215,9 @@ const FileUploadZone = ({ files, onAdd, onRemove, accept, helpText }) => {
 
   const handleDrop = (e) => {
     e.preventDefault(); setDragging(false);
-    const dropped = Array.from(e.dataTransfer.files).filter(f => accept.some(a => f.name.endsWith(a) || f.type.includes(a.replace('.', ''))));
+    const dropped = Array.from(e.dataTransfer.files).filter(f =>
+      accept.some(a => f.name.toLowerCase().endsWith(a))
+    );
     if (dropped.length) onAdd(dropped);
   };
 
@@ -249,7 +274,7 @@ const StyleSourcesManager = ({ sources, onChange }) => {
   return (
     <div className="space-y-3">
       <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-        Add public URLs to PDF or Markdown files. The AI will fetch and mirror the writing style automatically.
+        Add URLs to blog posts, product pages, PDFs, or Markdown files. The AI will fetch and mirror the writing style automatically.
       </p>
       {sources.map((s) => (
         <div key={s.id} className="grid grid-cols-[1fr_2fr_auto] gap-2 items-center">
@@ -471,12 +496,16 @@ const SocialGenerator = () => {
 
       if (activeStyleSources.length > 0) {
         setLoadingStage('Fetching style references…');
-        parts.push({ text: '\n\n--- WRITING STYLE REFERENCES ---\nAnalyse the tone, vocabulary, sentence structure, and style of the following documents and mirror them closely in your output:' });
+        parts.push({ text: '\n\n--- WRITING STYLE REFERENCES ---\nAnalyse the tone, vocabulary, sentence structure, and style of the following and mirror them closely in your output:' });
         for (const src of activeStyleSources) {
           try {
-            const { base64, mimeType } = await fetchFileAsBase64(src.url);
+            const result = await fetchStyleSource(src.url);
             parts.push({ text: `[Style reference: ${src.label}]` });
-            parts.push({ inlineData: { mimeType, data: base64 } });
+            if (result.type === 'inline') {
+              parts.push({ inlineData: { mimeType: result.mimeType, data: result.base64 } });
+            } else {
+              parts.push({ text: result.text });
+            }
           } catch (e) {
             parts.push({ text: `[Could not load style reference "${src.label}": ${e.message}]` });
           }
@@ -535,7 +564,7 @@ Generate distinct social copy variants in JSON format. Use Australian English.`
           <CollapsibleHeader title="Product Reference Materials" badge={refFiles.length > 0 ? `${refFiles.length} file${refFiles.length > 1 ? 's' : ''}` : undefined} open={refOpen} onToggle={() => setRefOpen(o => !o)} />
           {refOpen && (
             <div className="p-5 border-t border-gray-100 dark:border-gray-700">
-              <FileUploadZone files={refFiles} onAdd={addFiles} onRemove={removeFile} accept={['.pdf', '.txt']} helpText="PDF or TXT — used to inform product accuracy" />
+              <FileUploadZone files={refFiles} onAdd={addFiles} onRemove={removeFile} accept={['.pdf', '.md']} helpText="PDF or Markdown (.md) — used to inform product accuracy" />
             </div>
           )}
         </div>
