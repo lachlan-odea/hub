@@ -528,7 +528,7 @@ Image overlay copy consists of:
 - imageHero: a short, bold, punchy hero message (max 8 words) displayed large on the image
 - imageTagline: a supporting 1–2 sentence tagline shown smaller beneath the hero
 - imageCta: a short CTA button label (max 6 words, written in uppercase style e.g. "LEARN MORE ABOUT THIS →")
-Generate distinct social copy variants in JSON format. Use Australian English.`
+Generate distinct social copy variants in JSON format. Use American English.`
             }]
           },
           generationConfig: { responseMimeType: 'application/json', responseSchema: adCopySchema },
