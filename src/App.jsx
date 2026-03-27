@@ -507,7 +507,7 @@ const SocialGenerator = ({ apiKey }) => {
       }
 
       setLoadingStage('Generating copy…');
-      const res = await fetchWithRetry(buildApiUrl(API_KEY), {
+      const res = await fetchWithRetry(buildApiUrl(apiKey), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -638,7 +638,7 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
   const analyse = async () => {
     setLoading(true); setIntro(''); setBullets([]); setError('');
     try {
-      const res = await fetchWithRetry(buildApiUrl(API_KEY), {
+      const res = await fetchWithRetry(buildApiUrl(apiKey), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -695,7 +695,7 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
   const generate = async () => {
     setLoading(true); setResult(''); setTransferred(false);
     try {
-      const res = await fetchWithRetry(buildApiUrl(API_KEY), {
+      const res = await fetchWithRetry(buildApiUrl(apiKey), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `Create a ${contentType} based on this: ${prompt}` }] }],
@@ -875,6 +875,8 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [transfer, setTransfer] = useState('');
   const [dark, setDark] = useState(false);
+  const [apiKey, setApiKey] = useState(() => getStoredKey());
+  const [showKeySettings, setShowKeySettings] = useState(false);
 
   useEffect(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -886,15 +888,19 @@ const App = () => {
     document.documentElement.classList.toggle('dark', dark);
   }, [dark]);
 
-  if (!API_KEY) return <><style>{css}</style><MissingKeyBanner /></>;
+  if (!apiKey) return (
+    <><style>{css}</style>
+      <KeyEntryScreen onKeySubmit={key => setApiKey(key)} />
+    </>
+  );
 
   const sendToGenerator = (txt) => { setTransfer(txt); setActive('ContentGenerator'); };
 
   const views = {
     Home:                   <HomeView setActiveModule={setActive} />,
-    SocialGenerator:        <SocialGenerator />,
-    MarketingTrendAnalysis: <NewsAnalyser sendToContentGenerator={sendToGenerator} />,
-    ContentGenerator:       <ContentGenerator initialPrompt={transfer} setInitialPrompt={setTransfer} />,
+    SocialGenerator:        <SocialGenerator apiKey={apiKey} />,
+    MarketingTrendAnalysis: <NewsAnalyser sendToContentGenerator={sendToGenerator} apiKey={apiKey} />,
+    ContentGenerator:       <ContentGenerator initialPrompt={transfer} setInitialPrompt={setTransfer} apiKey={apiKey} />,
   };
 
   return (
