@@ -51,11 +51,51 @@ Draft high-impact B2B marketing content tailored for logistics executives.
 
 ---
 
+## API Key Setup
+
+This app uses a **per-user API key model** — each person enters their own free Gemini API key on first use. The key is stored only in their browser's `localStorage` and is never included in the source code, build bundle, or repository.
+
+### Getting a key
+
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Sign in with a Google account
+3. Click **Create API key**
+4. Copy the key
+
+### First launch
+
+1. Open the app
+2. Paste your Gemini API key into the entry screen
+3. Click **Get Started** — the key is validated and saved to your device
+4. You won't be asked again on this device
+
+### Updating or removing your key
+
+Click the **API Key** button at the bottom of the sidebar at any time to view or clear your stored key. Clearing it returns you to the key entry screen.
+
+---
+
+## Deployment
+
+This project deploys to GitHub Pages using the `gh-pages` package.
+
 ### Live URL
 
 ```
-https://your-username.github.io/your-repo-name/
+https://lachlan-odea.github.io/hub/
 ```
+
+---
+
+## PWA — Install as a Desktop App
+
+This app is a Progressive Web App (PWA) and can be installed to your desktop or taskbar without any installer or IT involvement.
+
+### How to install
+
+1. Open the app in **Chrome** or **Edge**
+2. Click the install icon in the address bar (or go to `...` menu → **Install AI Marketing Toolkit**)
+3. The app installs to your desktop and taskbar and opens in its own window
 
 ---
 
@@ -63,43 +103,15 @@ https://your-username.github.io/your-repo-name/
 
 ```
 src/
-└── App.jsx          # All components and application logic
+└── App.jsx              # All components and application logic
 public/
-└── index.html       # HTML entry point
-.env                 # Local environment variables (not committed)
-vite.config.js       # Vite config with GitHub Pages base path
-tailwind.config.js   # Tailwind config with dark mode enabled
+├── index.html           # HTML entry point with PWA meta tags
+├── manifest.json        # PWA manifest
+├── sw.js                # Service worker for offline caching
+└── icons/               # App icons (192px and 512px)
+vite.config.js           # Vite config with GitHub Pages base path
+tailwind.config.js       # Tailwind config with dark mode enabled
 ```
-
----
-
-## Dark Mode
-
-The app automatically detects your operating system's colour preference on first load and applies light or dark mode accordingly. Use the toggle in the top-right header to switch manually at any time.
-
----
-
-## Writing Style References
-
-The Social Generator supports fetching writing style references from public URLs at generation time. To configure default style sources, edit the `DEFAULT_STYLE_SOURCES` constant at the top of `App.jsx`:
-
-```javascript
-const DEFAULT_STYLE_SOURCES = [
-  { id: 'cw-brand', label: 'CargoWise Brand Voice', url: 'https://your-url-here.com/brand-voice.pdf' },
-  { id: 'cw-tone',  label: 'CargoWise Tone of Voice', url: 'https://your-url-here.com/tone.md' },
-];
-```
-
-Supported formats: PDF, Markdown (`.md`), and any public web page (blog posts, product pages, etc.).
-
----
-
-## Security
-
-- The Gemini API key is loaded from environment variables at build time and is **never stored in the repository**
-- Ensure `.env` is listed in your `.gitignore`
-- This tool is intended for use by a small trusted internal team — the API key will be compiled into the JS bundle, so it should not be deployed as a fully public site without additional access controls
-- If your key is ever accidentally exposed, revoke it immediately at [aistudio.google.com](https://aistudio.google.com) and generate a new one
 
 ---
 
