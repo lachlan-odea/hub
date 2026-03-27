@@ -1,18 +1,169 @@
-# React + Vite
+# AI Marketing Toolkit
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React-based marketing productivity tool powered by the Gemini AI API. Built for the CargoWise marketing team to streamline social copy creation, content generation, and marketing trend analysis.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## React Compiler
+### Social Generator
+Generate distinct social media copy variants for A/B testing, including image overlay copy for social posts.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Configure product name, target audience, key benefit, tone, and number of variants
+- Upload **product reference materials** (PDF or Markdown) to ground copy in accurate product details
+- Add **writing style references** via public URLs (blog posts, product pages, PDFs, or Markdown files) — the AI analyses and mirrors the tone and style automatically
+- Each variant includes:
+  - Post headline, body copy, and call to action
+  - **Image overlay copy** — hero message, tagline, and CTA button text ready for design handoff
+- Select individual variants and copy them all at once with **Copy Selected Social Posts**
 
-## Expanding the ESLint configuration
+### Marketing Trend Analysis
+Get real-time, actionable marketing insights grounded in current industry news.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Enter any topic (e.g. "Digital trends within the logistics industry")
+- Powered by Gemini's Google Search grounding — pulls live data, not just training knowledge
+- Each trend surfaces a clear **Action / Insight** and **Recommendation / Marketing Strategy**
+- Send any insight directly to the Content Generator with one click
 
-# hub
+### Content Generator
+Draft high-impact B2B marketing content tailored for logistics executives.
+
+- Supports five content types:
+  - LinkedIn Post (Short)
+  - Blog Post Outline
+  - Newsletter Article (Medium)
+  - Email Subject Lines & Body
+  - Whitepaper / eBook Section Draft
+- Accepts insights transferred directly from the Trend Analysis module
+- Full markdown rendering with copy-to-clipboard support
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | React 19 |
+| Bundler | Vite |
+| Styling | Tailwind CSS 3 |
+| AI | Google Gemini 2.5 Flash API |
+| Deployment | GitHub Pages via `gh-pages` |
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- A [Gemini API key](https://aistudio.google.com/apikey)
+
+### Installation
+
+```bash
+git clone https://github.com/your-username/your-repo-name.git
+cd your-repo-name
+npm install
+```
+
+### Environment Setup
+
+Create a `.env` file in the project root:
+
+```env
+VITE_GEMINI_API_KEY=your_api_key_here
+```
+
+> ⚠️ Never commit your `.env` file. It is already included in `.gitignore`.
+
+### Running Locally
+
+```bash
+npm run dev
+```
+
+The app will be available at `http://localhost:5173`.
+
+---
+
+## Deployment
+
+This project deploys to GitHub Pages using the `gh-pages` package.
+
+### One-command deploy
+
+```bash
+npm run deploy
+```
+
+This will:
+1. Build the project (`npm run build`)
+2. Push the compiled `dist/` folder to the `gh-pages` branch
+3. GitHub Pages serves the site from that branch
+
+> The API key is read from your local `.env` at build time and compiled into the bundle. It is not stored in the repository.
+
+### Live URL
+
+```
+https://your-username.github.io/your-repo-name/
+```
+
+---
+
+## Project Structure
+
+```
+src/
+└── App.jsx          # All components and application logic
+public/
+└── index.html       # HTML entry point
+.env                 # Local environment variables (not committed)
+vite.config.js       # Vite config with GitHub Pages base path
+tailwind.config.js   # Tailwind config with dark mode enabled
+```
+
+---
+
+## Dark Mode
+
+The app automatically detects your operating system's colour preference on first load and applies light or dark mode accordingly. Use the toggle in the top-right header to switch manually at any time.
+
+---
+
+## Writing Style References
+
+The Social Generator supports fetching writing style references from public URLs at generation time. To configure default style sources, edit the `DEFAULT_STYLE_SOURCES` constant at the top of `App.jsx`:
+
+```javascript
+const DEFAULT_STYLE_SOURCES = [
+  { id: 'cw-brand', label: 'CargoWise Brand Voice', url: 'https://your-url-here.com/brand-voice.pdf' },
+  { id: 'cw-tone',  label: 'CargoWise Tone of Voice', url: 'https://your-url-here.com/tone.md' },
+];
+```
+
+Supported formats: PDF, Markdown (`.md`), and any public web page (blog posts, product pages, etc.).
+
+---
+
+## Security
+
+- The Gemini API key is loaded from environment variables at build time and is **never stored in the repository**
+- Ensure `.env` is listed in your `.gitignore`
+- This tool is intended for use by a small trusted internal team — the API key will be compiled into the JS bundle, so it should not be deployed as a fully public site without additional access controls
+- If your key is ever accidentally exposed, revoke it immediately at [aistudio.google.com](https://aistudio.google.com) and generate a new one
+
+---
+
+## Usage Notes
+
+- The app uses **Gemini 2.5 Flash** (`gemini-2.5-flash`) for all generation tasks
+- If you hit a 429 quota error, check your plan and billing at [ai.google.dev](https://ai.google.dev)
+- The Marketing Trend Analysis module uses Gemini's Google Search grounding tool — results reflect current web content
+- All copy is generated in **Australian English**
+
+---
+
+## License
+
+Internal tool — not licensed for public distribution.
