@@ -1,11 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const _getEnvKey = () => {
-  try { const k = import.meta.env.VITE_GEMINI_API_KEY; if (k) return k; } catch (_) {}
-  try { const k = process.env.REACT_APP_GEMINI_API_KEY; if (k) return k; } catch (_) {}
-  return '';
-};
-const API_KEY = _getEnvKey();
 const MODEL = 'gemini-2.5-flash';
 const buildApiUrl = (key) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
