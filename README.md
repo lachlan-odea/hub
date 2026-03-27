@@ -51,58 +51,6 @@ Draft high-impact B2B marketing content tailored for logistics executives.
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- A [Gemini API key](https://aistudio.google.com/apikey)
-
-### Installation
-
-```bash
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
-npm install
-```
-
-### Environment Setup
-
-Create a `.env` file in the project root:
-
-```env
-VITE_GEMINI_API_KEY=your_api_key_here
-```
-
-> ⚠️ Never commit your `.env` file. It is already included in `.gitignore`.
-
-### Running Locally
-
-```bash
-npm run dev
-```
-
-The app will be available at `http://localhost:5173`.
-
----
-
-## Deployment
-
-This project deploys to GitHub Pages using the `gh-pages` package.
-
-### One-command deploy
-
-```bash
-npm run deploy
-```
-
-This will:
-1. Build the project (`npm run build`)
-2. Push the compiled `dist/` folder to the `gh-pages` branch
-3. GitHub Pages serves the site from that branch
-
-> The API key is read from your local `.env` at build time and compiled into the bundle. It is not stored in the repository.
-
 ### Live URL
 
 ```
@@ -160,7 +108,7 @@ Supported formats: PDF, Markdown (`.md`), and any public web page (blog posts, p
 - The app uses **Gemini 2.5 Flash** (`gemini-2.5-flash`) for all generation tasks
 - If you hit a 429 quota error, check your plan and billing at [ai.google.dev](https://ai.google.dev)
 - The Marketing Trend Analysis module uses Gemini's Google Search grounding tool — results reflect current web content
-- All copy is generated in **Australian English**
+- All copy is generated in **American English**
 
 ---
 
