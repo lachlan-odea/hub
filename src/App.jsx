@@ -328,7 +328,7 @@ const MarkdownOutput = ({ text }) => {
 };
 
 // ── Insight card ──────────────────────────────────────────────────────────────
-const InsightCard = ({ text, onSend }) => {
+const InsightCard = ({ text, sources = [], onSend }) => {
   const raw = text.replace(/^[*\-]\s*/, '').trim();
   const labelRx = /(Action \/ Insight:|Recommendation \/ Marketing Strategy:|Action:|Recommendation:|Insight:|Marketing Strategy:)/i;
   const parts = raw.split(labelRx).map(s => s.trim()).filter(Boolean);
@@ -353,6 +353,32 @@ const InsightCard = ({ text, onSend }) => {
           </div>
         )}
         {!title && !pairs.length && <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed" dangerouslySetInnerHTML={{ __html: inlineFmt(raw) }} />}
+        {sources.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 block mb-1.5">References</span>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1">
+              {sources.map((s, idx) => {
+                let label = s.title || '';
+                if (label) {
+                  const sep = [' | ', ' - ', ' – ', ' — '].find(d => label.lastIndexOf(d) !== -1);
+                  if (sep) label = label.slice(label.lastIndexOf(sep) + sep.length).trim();
+                  else if (label.length > 32) label = label.slice(0, 32) + '…';
+                }
+                if (!label) label = `Source ${idx + 1}`;
+                return (
+                  <li key={idx}>
+                    <a href={s.url} target="_blank" rel="noopener noreferrer"
+                      title={s.title || label}
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">
+                      <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                      {label}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
       </div>
       <div className="border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 px-5 py-3 flex justify-end gap-2">
         <CopyBtn text={fullText} />
@@ -628,8 +654,18 @@ Generate distinct social copy variants in JSON format. Use American English.`
 };
 
 // ── Module: Marketing Trend Analysis ─────────────────────────────────────────
+const TIMEFRAME_OPTIONS = [
+  { value: 'past week', label: 'Past week' },
+  { value: 'past month', label: 'Past month' },
+  { value: 'past 3 months', label: 'Past 3 months' },
+  { value: 'past 6 months', label: 'Past 6 months' },
+  { value: 'past year', label: 'Past year' },
+  { value: 'past 2 years', label: 'Past 2 years' },
+];
+
 const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
   const [topic, setTopic] = useState('Digital trends within the logistics industry');
+  const [timeframe, setTimeframe] = useState('past 3 months');
   const [loading, setLoading] = useState(false);
   const [intro, setIntro] = useState('');
   const [bullets, setBullets] = useState([]);
@@ -642,16 +678,37 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Analyse recent trends for "${topic}" and provide actionable marketing strategies.` }] }],
+          contents: [{ parts: [{ text: `Analyse trends from the ${timeframe} for "${topic}" and provide actionable marketing strategies.` }] }],
           tools: [{ google_search: {} }],
           systemInstruction: { parts: [{ text: `You are a market analyst. Structure your response exactly:\n- One short intro paragraph (no bullets).\n- Then each trend as "* " bullet on ONE line: <Title>  Action / Insight: <text>  Recommendation / Marketing Strategy: <text>\n- No sub-bullets or line breaks inside a bullet.\n- Australian English.` }] },
         }),
       });
       const raw = res.candidates[0].content.parts[0].text;
+      const chunks = res.candidates[0].groundingMetadata?.groundingChunks ?? [];
+      const supports = res.candidates[0].groundingMetadata?.groundingSupports ?? [];
       const introLines = [], bulletLines = [];
-      for (const l of raw.split('\n')) {
-        if (l.trim().startsWith('* ') || l.trim().startsWith('- ')) bulletLines.push(l.trim());
-        else if (!bulletLines.length) introLines.push(l);
+      let pos = 0;
+      for (const line of raw.split('\n')) {
+        const lineStart = pos, lineEnd = pos + line.length;
+        pos = lineEnd + 1;
+        if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+          const chunkIdxs = new Set();
+          for (const sup of supports) {
+            const segStart = sup.segment?.startIndex ?? 0;
+            const segEnd = sup.segment?.endIndex ?? 0;
+            if (segStart < lineEnd && segEnd > lineStart) {
+              for (const idx of (sup.groundingChunkIndices ?? [])) chunkIdxs.add(idx);
+            }
+          }
+          const seen = new Set();
+          const lineSources = [...chunkIdxs]
+            .map(i => chunks[i])
+            .filter(c => c?.web?.uri && !seen.has(c.web.uri) && seen.add(c.web.uri))
+            .map(c => ({ url: c.web.uri, title: c.web.title || '' }));
+          bulletLines.push({ text: line.trim(), sources: lineSources });
+        } else if (!bulletLines.length) {
+          introLines.push(line);
+        }
       }
       setIntro(introLines.join('\n').trim());
       setBullets(bulletLines);
@@ -666,6 +723,12 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
         <Label>Topic</Label>
         <Input value={topic} onChange={e => setTopic(e.target.value)} />
         <div className="mt-4">
+          <Label>Timeframe</Label>
+          <Select value={timeframe} onChange={e => setTimeframe(e.target.value)}>
+            {TIMEFRAME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        </div>
+        <div className="mt-4">
           <PrimaryBtn loading={loading} loadingText="Analysing…" color="green" onClick={analyse}>Analyse Marketing Trends</PrimaryBtn>
         </div>
       </SectionCard>
@@ -673,7 +736,7 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
       {(intro || bullets.length > 0) && (
         <div className="mt-6 space-y-4">
           {intro && <SectionCard><MarkdownOutput text={intro} /></SectionCard>}
-          {bullets.map((b, i) => <InsightCard key={i} text={b} onSend={sendToContentGenerator} />)}
+          {bullets.map((b, i) => <InsightCard key={i} text={b.text} sources={b.sources} onSend={sendToContentGenerator} />)}
         </div>
       )}
     </div>
@@ -684,6 +747,7 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
 const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
   const [contentType, setContentType] = useState(CONTENT_TYPES[0].value);
   const [prompt, setPrompt] = useState(initialPrompt || 'Draft a LinkedIn post about supply chain visibility.');
+  const [cargoWise, setCargoWise] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState('');
   const [transferred, setTransferred] = useState(false);
@@ -694,11 +758,14 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
 
   const generate = async () => {
     setLoading(true); setResult(''); setTransferred(false);
+    const fullPrompt = cargoWise
+      ? `${prompt}\n\nIn addition, explain how CargoWise specifically helps address this — referencing relevant CargoWise features, modules, or capabilities that directly support the recommendation.`
+      : prompt;
     try {
       const res = await fetchWithRetry(buildApiUrl(apiKey), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: `Create a ${contentType} based on this: ${prompt}` }] }],
+          contents: [{ parts: [{ text: `Create a ${contentType} based on this: ${fullPrompt}` }] }],
           systemInstruction: { parts: [{ text: 'You are an expert B2B copywriter for CargoWise. Use American English.' }] },
         }),
       });
@@ -723,6 +790,17 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
           </Select>
         </div>
         <div><Label>Prompt / brief</Label><Textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={6} /></div>
+        <div className="mt-4">
+          <label className="inline-flex items-center gap-2.5 cursor-pointer select-none group">
+            <input type="checkbox" checked={cargoWise} onChange={e => setCargoWise(e.target.checked)} className="sr-only" />
+            <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors
+              ${cargoWise ? 'bg-red-600 border-red-600' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'}`}>
+              {cargoWise && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+            </div>
+            <span className="text-sm text-gray-700 dark:text-gray-300">Add CargoWise context</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">— include how CargoWise addresses this recommendation</span>
+          </label>
+        </div>
         <div className="mt-4">
           <PrimaryBtn loading={loading} loadingText="Drafting…" color="red" onClick={generate}>Generate Content Draft</PrimaryBtn>
         </div>
