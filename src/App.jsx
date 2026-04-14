@@ -744,11 +744,12 @@ const NewsAnalyser = ({ sendToContentGenerator, apiKey }) => {
 };
 
 // ── Module: Content Generator ─────────────────────────────────────────────────
-const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
+const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey, ghToken }) => {
   const [contentType, setContentType] = useState(CONTENT_TYPES[0].value);
   const [prompt, setPrompt] = useState(initialPrompt || 'Draft a LinkedIn post about supply chain visibility.');
   const [cargoWise, setCargoWise] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
   const [result, setResult] = useState('');
   const [transferred, setTransferred] = useState(false);
 
@@ -758,10 +759,12 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
 
   const generate = async () => {
     setLoading(true); setResult(''); setTransferred(false);
-    const fullPrompt = cargoWise
-      ? `${prompt}\n\nIn addition, explain how CargoWise specifically helps address this — referencing relevant CargoWise features, modules, or capabilities that directly support the recommendation.`
-      : prompt;
     try {
+      let fullPrompt = prompt;
+      if (cargoWise) {
+        fullPrompt = `${prompt}\n\nIn addition, explain how CargoWise specifically helps address this — referencing relevant CargoWise features, modules, or capabilities by name.`;
+      }
+      setLoadingStage('Drafting…');
       const res = await fetchWithRetry(buildApiUrl(apiKey), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -771,7 +774,7 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
       });
       setResult(res.candidates[0].content.parts[0].text);
     } catch (e) { setResult('Error: ' + e.message); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoadingStage(''); }
   };
 
   return (
@@ -802,7 +805,7 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey }) => {
           </label>
         </div>
         <div className="mt-4">
-          <PrimaryBtn loading={loading} loadingText="Drafting…" color="red" onClick={generate}>Generate Content Draft</PrimaryBtn>
+          <PrimaryBtn loading={loading} loadingText={loadingStage || 'Drafting…'} color="red" onClick={generate}>Generate Content Draft</PrimaryBtn>
         </div>
       </SectionCard>
       {result && (
@@ -845,6 +848,7 @@ const HomeView = ({ setActiveModule }) => {
 
 // ── API Key Management ────────────────────────────────────────────────────────
 const STORAGE_KEY = 'gemini_api_key';
+const GH_TOKEN_KEY = 'github_token';
 
 const getStoredKey = () => {
   try { return localStorage.getItem(STORAGE_KEY) || ''; } catch { return ''; }
@@ -854,6 +858,45 @@ const saveKey = (key) => {
 };
 const clearKey = () => {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
+};
+const getStoredGhToken = () => {
+  try { return localStorage.getItem(GH_TOKEN_KEY) || ''; } catch { return ''; }
+};
+const saveGhToken = (t) => {
+  try { localStorage.setItem(GH_TOKEN_KEY, t); } catch {}
+};
+
+// ── CargoWise context fetcher ─────────────────────────────────────────────────
+const CW_REPO = 'WiseTechGlobal/Marketing.Data';
+let _cwCache = null;
+
+const fetchCargoWiseContext = async (token) => {
+  if (_cwCache) return _cwCache;
+  const headers = { Accept: 'application/vnd.github+json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const treeRes = await fetch(
+    `https://api.github.com/repos/${CW_REPO}/git/trees/HEAD?recursive=1`,
+    { headers }
+  );
+  if (!treeRes.ok) throw new Error(
+    `Cannot access CargoWise repository (${treeRes.status}). Check your GitHub token in Settings.`
+  );
+  const { tree } = await treeRes.json();
+  const mdFiles = tree.filter(f => f.type === 'blob' && f.path.endsWith('.md'));
+  const contents = await Promise.all(
+    mdFiles.map(async (file) => {
+      const res = await fetch(
+        `https://api.github.com/repos/${CW_REPO}/contents/${encodeURIComponent(file.path)}`,
+        { headers }
+      );
+      if (!res.ok) return '';
+      const data = await res.json();
+      const text = data.content ? atob(data.content.replace(/\n/g, '')) : '';
+      return `### ${file.path}\n\n${text}`;
+    })
+  );
+  _cwCache = contents.filter(Boolean).join('\n\n---\n\n');
+  return _cwCache;
 };
 
 // ── Key Entry Screen ──────────────────────────────────────────────────────────
@@ -941,36 +984,39 @@ const KeyEntryScreen = ({ onKeySubmit }) => {
 };
 
 // ── Change Key Modal ──────────────────────────────────────────────────────────
-const ChangeKeyModal = ({ currentKey, onClose, onKeySaved }) => {
+const ChangeKeyModal = ({ currentKey, currentGhToken, onClose, onKeySaved, onGhTokenSaved }) => {
   const [key, setKey] = useState('');
+  const [ghToken, setGhToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    const trimmed = key.trim();
-    if (!trimmed) { setError('Please enter your Gemini API key.'); return; }
+    const trimmedKey = key.trim();
+    const trimmedGh = ghToken.trim();
+    if (!trimmedKey && !trimmedGh) { setError('Enter a Gemini API key, a GitHub token, or both.'); return; }
     setLoading(true); setError('');
     try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmed}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }),
+      if (trimmedKey) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmedKey}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: 'hi' }] }] }) }
+        );
+        if (res.status === 403) { setError('Gemini API key does not have permission.'); return; }
+        if (!res.ok && res.status !== 400) {
+          const body = await res.json().catch(() => ({}));
+          setError(body?.error?.message || `Unexpected error (${res.status})`); return;
         }
-      );
-      if (res.status === 400 || res.ok) {
-        saveKey(trimmed);
-        onKeySaved(trimmed);
-        onClose();
-      } else if (res.status === 403) {
-        setError('API key does not have permission. Check your Gemini API key.');
-      } else {
-        const body = await res.json().catch(() => ({}));
-        setError(body?.error?.message || `Unexpected error (${res.status})`);
+        saveKey(trimmedKey);
+        onKeySaved(trimmedKey);
       }
+      if (trimmedGh) {
+        saveGhToken(trimmedGh);
+        onGhTokenSaved(trimmedGh);
+        _cwCache = null; // invalidate context cache when token changes
+      }
+      onClose();
     } catch {
-      setError('Could not validate the key. Check your internet connection.');
+      setError('Could not validate. Check your internet connection.');
     } finally { setLoading(false); }
   };
 
@@ -978,45 +1024,34 @@ const ChangeKeyModal = ({ currentKey, onClose, onKeySaved }) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-xl w-full max-w-md p-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Update Gemini API Key</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Settings</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
-        {currentKey && (
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-            Current key: <span className="font-mono">{currentKey.slice(0, 8)}{'•'.repeat(12)}</span>
-          </p>
-        )}
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div>
-            <Label>New Gemini API Key</Label>
-            <input
-              type="password"
-              value={key}
-              onChange={e => setKey(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              placeholder="AIzaSy..."
-              className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 p-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white dark:focus:bg-gray-700 transition"
-            />
+            <Label>Gemini API Key</Label>
+            {currentKey && <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Current: <span className="font-mono">{currentKey.slice(0, 8)}{'•'.repeat(12)}</span></p>}
+            <input type="password" value={key} onChange={e => setKey(e.target.value)}
+              placeholder="Leave blank to keep current key  ·  AIzaSy…"
+              className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 p-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white dark:focus:bg-gray-700 transition" />
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">Get a free key from Google AI Studio →</a>
+            </p>
           </div>
-          {error && (
-            <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
-              {error}
-            </div>
-          )}
-          <PrimaryBtn loading={loading} loadingText="Validating…" color="indigo" onClick={handleSubmit}>
-            Save New Key
-          </PrimaryBtn>
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
-            Need a key?{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
-              className="text-indigo-600 dark:text-indigo-400 hover:underline">
-              Get one free from Google AI Studio →
-            </a>
-          </p>
+          <div className="border-t border-gray-100 dark:border-gray-800 pt-5">
+            <Label>GitHub Token <span className="normal-case font-normal text-gray-400">(for CargoWise context)</span></Label>
+            {currentGhToken && <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Current: <span className="font-mono">{'•'.repeat(16)}</span></p>}
+            <input type="password" value={ghToken} onChange={e => setGhToken(e.target.value)}
+              placeholder="Leave blank to keep current token  ·  ghp_…"
+              className="w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-600 p-3 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white dark:focus:bg-gray-700 transition" />
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Needs <span className="font-mono">read:contents</span> scope on the WiseTechGlobal/Marketing.Data repo.</p>
+          </div>
+          {error && <div className="p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">{error}</div>}
+          <PrimaryBtn loading={loading} loadingText="Saving…" color="indigo" onClick={handleSubmit}>Save</PrimaryBtn>
         </div>
       </div>
     </div>
@@ -1037,6 +1072,7 @@ const App = () => {
   const [transfer, setTransfer] = useState('');
   const [dark, setDark] = useState(false);
   const [apiKey, setApiKey] = useState(() => getStoredKey());
+  const [ghToken, setGhToken] = useState(() => getStoredGhToken());
   const [showKeySettings, setShowKeySettings] = useState(false);
 
   useEffect(() => {
@@ -1061,13 +1097,14 @@ const App = () => {
     Home:                   <HomeView setActiveModule={setActive} />,
     SocialGenerator:        <SocialGenerator apiKey={apiKey} />,
     MarketingTrendAnalysis: <NewsAnalyser sendToContentGenerator={sendToGenerator} apiKey={apiKey} />,
-    ContentGenerator:       <ContentGenerator initialPrompt={transfer} setInitialPrompt={setTransfer} apiKey={apiKey} />,
+    ContentGenerator:       <ContentGenerator initialPrompt={transfer} setInitialPrompt={setTransfer} apiKey={apiKey} ghToken={ghToken} />,
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex">
       <style>{css}</style>
-      <aside className={`bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 flex-col flex-shrink-0 transition-all duration-200 hidden md:flex ${sidebarOpen ? 'w-56' : 'w-0 overflow-hidden'}`}>
+      {sidebarOpen && <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800 flex flex-col flex-shrink-0 transition-all duration-200 fixed inset-y-0 left-0 z-40 md:relative md:z-auto ${sidebarOpen ? 'w-56' : 'w-0 overflow-hidden'}`}>
         <div className="p-5 border-b border-gray-100 dark:border-gray-800">
           <span className="text-lg font-bold text-indigo-600">AI Toolkit</span>
         </div>
@@ -1092,14 +1129,16 @@ const App = () => {
       {showKeySettings && (
         <ChangeKeyModal
           currentKey={apiKey}
+          currentGhToken={ghToken}
           onClose={() => setShowKeySettings(false)}
           onKeySaved={key => setApiKey(key)}
+          onGhTokenSaved={t => setGhToken(t)}
         />
       )}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
           <button onClick={() => setSidebarOpen(o => !o)}
-            className="hidden md:flex p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 transition">
+            className="flex p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200 transition">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
