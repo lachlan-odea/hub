@@ -820,19 +820,174 @@ const ContentGenerator = ({ initialPrompt, setInitialPrompt, apiKey, ghToken }) 
   );
 };
 
+// ── Home Intelligence Dashboard ───────────────────────────────────────────────
+const DASH_CARDS = [
+  {
+    id: 'pulse',
+    title: 'Industry Pulse',
+    accent: 'border-t-purple-500',
+    titleColor: 'text-purple-600 dark:text-purple-400',
+    prompt: 'What is the current sentiment in logistics and supply chain industry publications about CargoWise and the broader logistics technology market? Summarise 3 key themes or talking points.',
+  },
+  {
+    id: 'trending',
+    title: 'Trending in Logistics',
+    accent: 'border-t-amber-500',
+    titleColor: 'text-amber-600 dark:text-amber-400',
+    prompt: 'What logistics and supply chain topics are getting the most traction in industry publications right now that CargoWise could respond to with marketing content? List the top 3 trending topics.',
+  },
+];
+
+const DashCard = ({ data, onSend }) => {
+  const fullText = [data.intro, ...data.bullets.map(b => b.text)].filter(Boolean).join('\n\n');
+  return (
+    <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-800 border-t-2 ${data.accent} shadow-sm flex flex-col`}>
+      <div className="px-4 pt-4 pb-3 border-b border-gray-100 dark:border-gray-800">
+        <h3 className={`font-semibold text-sm ${data.titleColor}`}>{data.title}</h3>
+      </div>
+      <div className="p-4 flex-1 text-xs">
+        {data.loading ? (
+          <div className="space-y-2 animate-pulse">
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-4/6" />
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-full mt-3" />
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-5/6" />
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-700 rounded w-3/6" />
+          </div>
+        ) : data.error ? (
+          <p className="text-red-500 dark:text-red-400">{data.error}</p>
+        ) : (
+          <div className="space-y-3">
+            {data.intro && <p className="text-gray-500 dark:text-gray-400 leading-relaxed">{data.intro}</p>}
+            {data.bullets.map((b, i) => {
+              const raw = b.text.replace(/^[*\-]\s*/, '');
+              const colonIdx = raw.indexOf(':');
+              const dashIdx = raw.indexOf(' — ');
+              const splitAt = colonIdx > 0 && (dashIdx < 0 || colonIdx < dashIdx) ? colonIdx : dashIdx;
+              const title = splitAt > 0 ? raw.slice(0, splitAt).trim() : '';
+              const body = splitAt > 0 ? raw.slice(splitAt + (raw[splitAt] === ':' ? 1 : 3)).trim() : raw;
+              const bulletText = [title, body].filter(Boolean).join(': ');
+              return (
+                <div key={i} className="border-l-2 border-gray-200 dark:border-gray-700 pl-2.5 space-y-0.5">
+                  {title && <p className="font-semibold text-gray-700 dark:text-gray-300">{title}</p>}
+                  <p className="text-gray-500 dark:text-gray-400 leading-relaxed">{body}</p>
+                  {b.sources.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 pt-0.5">
+                      {b.sources.map((s, si) => {
+                        let label = s.title || '';
+                        if (label) {
+                          const sep = [' | ', ' - ', ' – ', ' — '].find(d => label.lastIndexOf(d) !== -1);
+                          if (sep) label = label.slice(label.lastIndexOf(sep) + sep.length).trim();
+                          else if (label.length > 24) label = label.slice(0, 24) + '…';
+                        }
+                        if (!label) label = `Source ${si + 1}`;
+                        return (
+                          <a key={si} href={s.url} target="_blank" rel="noopener noreferrer" title={s.title || label}
+                            className="text-blue-500 dark:text-blue-400 hover:underline">{label}</a>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="pt-1">
+                    <SendToGenBtn text={bulletText} onClick={onSend} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const HomeDashboard = ({ apiKey, onSend, cards, onCardsChange }) => {
+  const fetchCard = async (card, idx) => {
+    try {
+      const res = await fetchWithRetry(buildApiUrl(apiKey), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: card.prompt }] }],
+          tools: [{ google_search: {} }],
+          systemInstruction: { parts: [{ text: `You are a marketing intelligence analyst for CargoWise. Structure your response exactly:\n- One short intro sentence (no bullets).\n- Then exactly 3 items as "* " bullets on ONE line each: <Title>: <brief description>\n- No sub-bullets or line breaks inside a bullet.\n- Australian English.` }] },
+        }),
+      });
+      const raw = res.candidates[0].content.parts[0].text;
+      const chunks = res.candidates[0].groundingMetadata?.groundingChunks ?? [];
+      const supports = res.candidates[0].groundingMetadata?.groundingSupports ?? [];
+      const introLines = [], bulletLines = [];
+      let pos = 0;
+      for (const line of raw.split('\n')) {
+        const lineStart = pos, lineEnd = pos + line.length;
+        pos = lineEnd + 1;
+        if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+          const chunkIdxs = new Set();
+          for (const sup of supports) {
+            const segS = sup.segment?.startIndex ?? 0, segE = sup.segment?.endIndex ?? 0;
+            if (segS < lineEnd && segE > lineStart) for (const ci of (sup.groundingChunkIndices ?? [])) chunkIdxs.add(ci);
+          }
+          const seen = new Set();
+          const lineSources = [...chunkIdxs]
+            .map(ci => chunks[ci])
+            .filter(c => c?.web?.uri && !seen.has(c.web.uri) && seen.add(c.web.uri))
+            .map(c => ({ url: c.web.uri, title: c.web.title || '' }));
+          bulletLines.push({ text: line.trim(), sources: lineSources });
+        } else if (!bulletLines.length) {
+          introLines.push(line);
+        }
+      }
+      onCardsChange(prev => prev.map((c, i) => i === idx
+        ? { ...c, loading: false, intro: introLines.join('\n').trim(), bullets: bulletLines }
+        : c));
+    } catch (e) {
+      onCardsChange(prev => prev.map((c, i) => i === idx ? { ...c, loading: false, error: e.message } : c));
+    }
+  };
+
+  const fetchAll = () => {
+    onCardsChange(DASH_CARDS.map(c => ({ ...c, loading: true, intro: '', bullets: [], error: '' })));
+    DASH_CARDS.forEach((card, idx) => fetchCard(card, idx));
+  };
+
+  useEffect(() => { if (!cards) fetchAll(); }, []);
+
+  const displayCards = cards ?? DASH_CARDS.map(c => ({ ...c, loading: true, intro: '', bullets: [], error: '' }));
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">Intelligence</p>
+        <button onClick={fetchAll}
+          className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Refresh
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {displayCards.map((card) => <DashCard key={card.id} data={card} onSend={onSend} />)}
+      </div>
+    </div>
+  );
+};
+
 // ── Home ──────────────────────────────────────────────────────────────────────
-const HomeView = ({ setActiveModule }) => {
+const HomeView = ({ setActiveModule, apiKey, sendToContentGenerator, dashCards, onDashCardsChange }) => {
   const mods = [
     { id: 'SocialGenerator',        label: 'Social Generator',        desc: 'Generate distinct social copy variants for A/B testing.',        color: 'border-indigo-500', text: 'text-indigo-600' },
     { id: 'MarketingTrendAnalysis', label: 'Marketing Trend Analysis', desc: 'Real-time insights and actionable strategies from industry news.', color: 'border-green-500',  text: 'text-green-600'  },
     { id: 'ContentGenerator',       label: 'Content Generator',        desc: 'Draft high-impact marketing content for logistics executives.',   color: 'border-red-500',    text: 'text-red-600'    },
   ];
   return (
-    <div className="p-6 md:p-8 max-w-3xl mx-auto">
-      <div className="mb-8">
+    <div className="p-6 md:p-8 max-w-5xl mx-auto">
+      <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">Welcome to AI Marketing Toolkit</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Select a module below to get started.</p>
       </div>
+      <HomeDashboard apiKey={apiKey} onSend={sendToContentGenerator} cards={dashCards} onCardsChange={onDashCardsChange} />
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-3">Tools</p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {mods.map(m => (
           <button key={m.id} onClick={() => setActiveModule(m.id)}
@@ -1073,6 +1228,7 @@ const App = () => {
   const [dark, setDark] = useState(false);
   const [apiKey, setApiKey] = useState(() => getStoredKey());
   const [ghToken, setGhToken] = useState(() => getStoredGhToken());
+  const [dashCards, setDashCards] = useState(null);
   const [showKeySettings, setShowKeySettings] = useState(false);
 
   useEffect(() => {
@@ -1094,7 +1250,7 @@ const App = () => {
   const sendToGenerator = (txt) => { setTransfer(txt); setActive('ContentGenerator'); };
 
   const views = {
-    Home:                   <HomeView setActiveModule={setActive} />,
+    Home:                   <HomeView setActiveModule={setActive} apiKey={apiKey} sendToContentGenerator={sendToGenerator} dashCards={dashCards} onDashCardsChange={setDashCards} />,
     SocialGenerator:        <SocialGenerator apiKey={apiKey} />,
     MarketingTrendAnalysis: <NewsAnalyser sendToContentGenerator={sendToGenerator} apiKey={apiKey} />,
     ContentGenerator:       <ContentGenerator initialPrompt={transfer} setInitialPrompt={setTransfer} apiKey={apiKey} ghToken={ghToken} />,
